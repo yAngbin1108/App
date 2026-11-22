@@ -21,14 +21,20 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
-      - name: build unsigned ipa
+      - name: build unsigned ipa (arm64)
         run: |
           chmod +x ci/build_ipa_macos.sh
-          ./ci/build_ipa_macos.sh
+          ARCH=arm64 OUT_NAME=App ./ci/build_ipa_macos.sh
 
-      - name: upload artifact
+      - name: build unsigned ipa (arm64e)
+        run: |
+          ARCH=arm64e OUT_NAME=App-arm64e ./ci/build_ipa_macos.sh
+
+      - name: upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: App-ipa
-          path: dist/App.ipa
+          path: |
+            dist/App.ipa
+            dist/App-arm64e.ipa
           if-no-files-found: error

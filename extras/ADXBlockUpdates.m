@@ -9,6 +9,7 @@
 #import "ADXInternal.h"
 #import "ADXRemoteCompat.h"
 #import "darksword.h"
+#import "pac.h"
 #import <unistd.h>
 
 NSString *const ADXPlaceholderName = @"com.apple.mobileinstallation.placeholder";
@@ -44,10 +45,22 @@ int ADXBlockApply(NSArray<NSString *> *paths, BOOL block,
         ADXLogf(@"(block) 内核原语未就绪");
         return 1;
     }
+    // arm64 构建的进程生成不了 pacia，RemoteCall 无法往 arm64e 的 installd 写 PC/LR。
+    // 提前判定，别让它空转两分钟才报一句「去 App Store 点获取」。
+    if (!pacsignworks()) {
+        ADXLogf(@"(block) 当前是 arm64 构建：RemoteCall 不能给 arm64e 目标（installd）签名指针，"
+                 "注入不可用。请安装 arm64e 版本后再试。");
+        return 4;
+    }
 
     ADXLogf(@"(block) 等待 installd 唤醒（卡住请去 App Store 点任意 App 的「获取」）…");
     int retry = 0;
     while (adx_init_remote_call("installd", false) != 0) {
+        NSString *why = adx_last_attach_error();
+        if (why.length && [why rangeOfString:@"arm64e"].location != NSNotFound) {
+            ADXLogf(@"(block) 附着被拒：%@", why);
+            return 4;
+        }
         sleep(2);
         retry++;
         if (retry % 5 == 0) {

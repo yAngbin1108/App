@@ -9,6 +9,7 @@
 #import "ADXHomeViewController.h"
 #import "ADXAppListViewController.h"
 #import "ADXBlockViewController.h"
+#import "ADXDowngradeViewController.h"
 #import "ADXIPAViewController.h"
 #import "ADXInternal.h"
 
@@ -39,7 +40,7 @@
 }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    if (s == 1) return 2;
+    if (s == 1) return 3;
     if (s == 3) return 4;
     return 1;
 }
@@ -67,6 +68,9 @@
         if (ip.row == 0) {
             cell.textLabel.text = @"屏蔽 App Store 更新";
             cell.detailTextLabel.text = @"在 .app 父目录建 placeholder，安装服务跳过更新";
+        } else if (ip.row == 1) {
+            cell.textLabel.text = @"降级到历史版本";
+            cell.detailTextLabel.text = @"查 iTunes / 版本源，注入 SpringBoard 提交旧版本下载";
         } else {
             cell.textLabel.text = @"产物（IPA）";
             cell.detailTextLabel.text = @"Documents/Decrypted · 点按分享";
@@ -109,8 +113,10 @@
     if (ip.section == 0) {
         [self.navigationController pushViewController:[ADXAppListViewController new] animated:YES];
     } else if (ip.section == 1) {
-        UIViewController *vc = ip.row == 0 ? (UIViewController *)[ADXBlockViewController new]
-                                          : (UIViewController *)[ADXIPAViewController new];
+        UIViewController *vc = nil;
+        if (ip.row == 0) vc = [ADXBlockViewController new];
+        else if (ip.row == 1) vc = [ADXDowngradeViewController new];
+        else vc = [ADXIPAViewController new];
         [self.navigationController pushViewController:vc animated:YES];
     }
 }
