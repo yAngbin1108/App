@@ -7,6 +7,7 @@
 //
 #import "ADXHomeViewController.h"
 #import "ADXAppListViewController.h"
+#import "ADXBlockViewController.h"
 #import "ADXInternal.h"
 
 @implementation ADXHomeViewController
@@ -17,24 +18,25 @@
     self.tableView.backgroundColor = UIColor.systemGroupedBackgroundColor;
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 3; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 4; }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
     switch (s) {
         case 0: return @"砸壳（FairPlay · 无需内核）";
-        case 1: return @"设置";
+        case 1: return @"应用管理";
+        case 2: return @"设置";
         default: return @"说明";
     }
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    if (s != 2) return nil;
+    if (s != 3) return nil;
     return @"FairPlay 砸壳走 mremap_encrypted()，由 fairplayd 解密后回读，"
            @"不需要内核漏洞；已安装应用的 SC_Info 里自带授权，所以能直接出包。";
 }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    return s == 2 ? 3 : 1;
+    return s == 3 ? 3 : 1;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -53,6 +55,16 @@
     }
 
     if (ip.section == 1) {
+        cell.textLabel.text = @"屏蔽 App Store 更新";
+        cell.textLabel.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
+        cell.detailTextLabel.text = @"在 .app 父目录建 placeholder 目录，安装服务会跳过更新";
+        cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        return cell;
+    }
+
+    if (ip.section == 2) {
         cell.textLabel.text = @"解除安装限制";
         cell.textLabel.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
         cell.detailTextLabel.text = @"出包时把 MinimumOSVersion 降到 10.0、去掉设备能力限制";
@@ -82,6 +94,8 @@
     [tv deselectRowAtIndexPath:ip animated:YES];
     if (ip.section == 0) {
         [self.navigationController pushViewController:[ADXAppListViewController new] animated:YES];
+    } else if (ip.section == 1) {
+        [self.navigationController pushViewController:[ADXBlockViewController new] animated:YES];
     }
 }
 
