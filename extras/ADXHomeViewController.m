@@ -2,12 +2,14 @@
 //  ADXHomeViewController.m
 //  App 扩展层 — 入口页
 //
-//  这里只放「第三方源码里没有」的能力：FairPlay 用户态砸壳、解除安装限制。
-//  第三方原有的砸壳/文件管理/内存编辑/进程列表一概不动，仍在它们自己的标签页。
+//  这里只放「第三方源码里没有」的能力：FairPlay 用户态砸壳、屏蔽 App Store
+//  更新、解除安装限制、产物管理。第三方原有的砸壳 / 文件管理 / 内存编辑 /
+//  进程列表 / 设置 / 偏移一概不动，仍在它们自己的标签页里。
 //
 #import "ADXHomeViewController.h"
 #import "ADXAppListViewController.h"
 #import "ADXBlockViewController.h"
+#import "ADXIPAViewController.h"
 #import "ADXInternal.h"
 
 @implementation ADXHomeViewController
@@ -23,7 +25,7 @@
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
     switch (s) {
         case 0: return @"砸壳（FairPlay · 无需内核）";
-        case 1: return @"应用管理";
+        case 1: return @"应用管理与产物";
         case 2: return @"设置";
         default: return @"说明";
     }
@@ -32,11 +34,14 @@
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
     if (s != 3) return nil;
     return @"FairPlay 砸壳走 mremap_encrypted()，由 fairplayd 解密后回读，"
-           @"不需要内核漏洞；已安装应用的 SC_Info 里自带授权，所以能直接出包。";
+           @"不需要内核漏洞；已安装应用的 SC_Info 里自带授权，所以能直接出包。"
+           @"屏蔽更新需要内核读写就绪（先在「砸壳」页初始化）。";
 }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    return s == 3 ? 3 : 1;
+    if (s == 1) return 2;
+    if (s == 3) return 4;
+    return 1;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -44,45 +49,54 @@
     UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:cid];
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:cid];
 
+    cell.textLabel.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
+    cell.detailTextLabel.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightRegular];
+    cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
+    cell.detailTextLabel.text = nil;
+    cell.accessoryView = nil;
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+
     if (ip.section == 0) {
         cell.textLabel.text = @"FairPlay 砸壳";
-        cell.textLabel.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
         cell.detailTextLabel.text = @"选一个已安装应用，导出解密后的 IPA";
-        cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         return cell;
     }
 
     if (ip.section == 1) {
-        cell.textLabel.text = @"屏蔽 App Store 更新";
-        cell.textLabel.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
-        cell.detailTextLabel.text = @"在 .app 父目录建 placeholder 目录，安装服务会跳过更新";
-        cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        if (ip.row == 0) {
+            cell.textLabel.text = @"屏蔽 App Store 更新";
+            cell.detailTextLabel.text = @"在 .app 父目录建 placeholder，安装服务跳过更新";
+        } else {
+            cell.textLabel.text = @"产物（IPA）";
+            cell.detailTextLabel.text = @"Documents/Decrypted · 点按分享";
+        }
         return cell;
     }
 
     if (ip.section == 2) {
         cell.textLabel.text = @"解除安装限制";
-        cell.textLabel.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
-        cell.detailTextLabel.text = @"出包时把 MinimumOSVersion 降到 10.0、去掉设备能力限制";
-        cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
+        cell.detailTextLabel.text = @"出包时 MinimumOSVersion → 10.0，去掉设备能力限制";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = [NSUserDefaults.standardUserDefaults boolForKey:@"adx.relax"];
         [sw addTarget:self action:@selector(relaxChanged:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
+        cell.accessoryType = UITableViewCellAccessoryNone;
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         return cell;
     }
 
     cell.textLabel.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
     cell.textLabel.numberOfLines = 0;
+    cell.detailTextLabel.text = nil;
+    cell.accessoryType = UITableViewCellAccessoryNone;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    if (ip.row == 0) cell.textLabel.text = @"产物目录：Documents/Decrypted/";
-    else if (ip.row == 1) cell.textLabel.text = @"失败提示 ENOMEM = 这台设备的 fairplayd 拒绝，不代表账号问题。";
-    else cell.textLabel.text = @"本页功能为新增模块，第三方原有代码未做任何修改。";
+    switch (ip.row) {
+        case 0: cell.textLabel.text = @"产物目录：Documents/Decrypted/（「文件」App 里也能看到）"; break;
+        case 1: cell.textLabel.text = @"失败提示 ENOMEM = 这台设备的 fairplayd 拒绝，不代表账号问题。"; break;
+        case 2: cell.textLabel.text = @"假加密壳（cryptid≠0 但 cryptsize=0）会按明文出包，不需要解密。"; break;
+        default: cell.textLabel.text = @"本页功能为新增模块，第三方原有代码未做任何修改。"; break;
+    }
     return cell;
 }
 
@@ -95,7 +109,9 @@
     if (ip.section == 0) {
         [self.navigationController pushViewController:[ADXAppListViewController new] animated:YES];
     } else if (ip.section == 1) {
-        [self.navigationController pushViewController:[ADXBlockViewController new] animated:YES];
+        UIViewController *vc = ip.row == 0 ? (UIViewController *)[ADXBlockViewController new]
+                                          : (UIViewController *)[ADXIPAViewController new];
+        [self.navigationController pushViewController:vc animated:YES];
     }
 }
 
