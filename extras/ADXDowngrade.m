@@ -170,15 +170,15 @@ static int dg_run_injected(long long trackId, long long versionId, NSString *loo
     klog(@"[B] ctx=0x%llx ctr=0x%llx", ctx, ctr);
 
     uint64_t itemsArr = adx_remote_call(1000, "objc_msgSend", b_getClass("NSArray"),
-                                        b_sel("arrayWithObject:"), item, 0, 0, 0, 0, 0, 0);
+                                        b_sel("arrayWithObject:"), item, 0, 0, 0, 0, 0);
     uint64_t purchases = adx_remote_call(1000, "objc_msgSend", ctr,
-                                         b_sel("_newPurchasesWithItems:"), itemsArr, 0, 0, 0, 0, 0, 0);
+                                         b_sel("_newPurchasesWithItems:"), itemsArr, 0, 0, 0, 0, 0);
     klog(@"[B] purchases=%llu", purchases);
     if (!purchases) { adx_destroy_remote_call(); return 26; }
 
     uint64_t perfName = b_sel("_performPurchases:hasBundlePurchase:withClientContext:completionBlock:");
     uint64_t resp = adx_remote_call(1000, "objc_msgSend", ctr, b_sel("respondsToSelector:"),
-                                    perfName, 0, 0, 0, 0, 0, 0);
+                                    perfName, 0, 0, 0, 0, 0);
     uint64_t cnt = adx_remote_call(1000, "objc_msgSend", purchases, b_sel("count"), 0, 0, 0, 0, 0, 0);
     klog(@"[B] 提交前：responds=%llu purchases=%llu（%llu 项）ctx=0x%llx", resp, purchases, cnt, ctx);
     if (!resp) {
