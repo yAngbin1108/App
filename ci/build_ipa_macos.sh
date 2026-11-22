@@ -102,7 +102,7 @@ i=0
 for s in "${SRCS[@]}"; do
   i=$((i+1))
   rel="${s#$ROOT/}"
-  o="$OBJDIR/$(printf '%03d' "$i")_$(echo "$rel" | tr '/ ' '__' | sed 's/\.\(m\|c\)$/.o/')"
+  o="$OBJDIR/$(printf '%03d' "$i")_$(echo "$rel" | tr '/ ' '__' | sed 's/\.m$/.o/; s/\.c$/.o/')"
   printf '    [%d/%d] %s\n' "$i" "${#SRCS[@]}" "$rel"
   "$CLANG" "${CFLAGS[@]}" "${INCLUDES[@]}" -c "$s" -o "$o"
   OBJS+=("$o")
