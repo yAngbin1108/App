@@ -14,6 +14,7 @@
 #import "ADXInternal.h"
 #import "FairPlayCore.h"
 #import "SKZipWriter.h"
+#import "vfs.h"
 
 #import <mach-o/fat.h>
 #import <mach-o/loader.h>
@@ -56,8 +57,38 @@ static BOOL adx_dir_writable(NSString *dir) {
     return ok;
 }
 
+/// 走内核读文件（vfs_read，绕开沙盒与 POSIX 属主检查）。
+/// 应用包里有些文件（典型是 SC_Info/*.supf、*.supp）带额外保护，普通 open()/copyItem
+/// 会被沙盒拦成 EPERM —— 第三方砸壳页能拷整个包，是因为它连这类文件也走内核。
+static BOOL adx_copy_via_kernel(NSString *src, NSString *dst) {
+    if (!vfs_isready()) return NO;
+    int64_t size = vfs_filesize(src.fileSystemRepresentation);
+    if (size < 0) return NO;
+    FILE *out = fopen(dst.fileSystemRepresentation, "wb");
+    if (!out) return NO;
+    const size_t chunk = 1u << 20;
+    void *buf = malloc(chunk);
+    if (!buf) { fclose(out); unlink(dst.fileSystemRepresentation); return NO; }
+    BOOL ok = YES;
+    int64_t off = 0;
+    while (off < size) {
+        size_t want = (size_t)MIN((int64_t)chunk, size - off);
+        int64_t got = vfs_read(src.fileSystemRepresentation, buf, want, (off_t)off);
+        if (got <= 0) { ok = NO; break; }
+        if (fwrite(buf, 1, (size_t)got, out) != (size_t)got) { ok = NO; break; }
+        off += got;
+    }
+    free(buf);
+    fclose(out);
+    if (!ok) { unlink(dst.fileSystemRepresentation); return NO; }
+    return YES;
+}
+
 /// 递归拷贝，保留符号链接；count 统计普通文件数。
-static BOOL adx_copy_tree(NSString *src, NSString *dst, NSUInteger *count, NSString **err) {
+/// 单个文件读不到时：先退回内核读取，仍失败就跳过（记进 skipped），不让整个任务失败 ——
+/// 应用包里常有一两个受保护文件，因为一个文件放弃整包砸壳没有意义。
+static BOOL adx_copy_tree(NSString *src, NSString *dst, NSUInteger *count,
+                          NSMutableArray<NSString *> *skipped, NSString **err) {
     NSFileManager *fm = NSFileManager.defaultManager;
     NSError *e = nil;
     NSDictionary *attrs = [fm attributesOfItemAtPath:src error:&e];
@@ -81,7 +112,7 @@ static BOOL adx_copy_tree(NSString *src, NSString *dst, NSUInteger *count, NSStr
         for (NSString *name in items) {
             NSString *s = [src stringByAppendingPathComponent:name];
             NSString *d = [dst stringByAppendingPathComponent:name];
-            if (!adx_copy_tree(s, d, count, err)) return NO;
+            if (!adx_copy_tree(s, d, count, skipped, err)) return NO;
         }
         return YES;
     }
@@ -99,9 +130,15 @@ static BOOL adx_copy_tree(NSString *src, NSString *dst, NSUInteger *count, NSStr
         return YES;
     }
     if (![fm copyItemAtPath:src toPath:dst error:&e]) {
-        if (err) *err = [NSString stringWithFormat:@"拷贝 %@ 失败：%@", src.lastPathComponent,
-                         e.localizedDescription ?: @"未知错误"];
-        return NO;
+        // 沙盒或属主挡住单个文件：改用内核读取重抄一遍，仍不行就跳过。
+        if (adx_copy_via_kernel(src, dst)) {
+            if (count) (*count)++;
+            return YES;
+        }
+        if (skipped) [skipped addObject:src];
+        ADXLogf(@"(fairplay) 跳过读不到的文件：%@（%@）", src.lastPathComponent,
+                e.localizedDescription ?: @"未知错误");
+        return YES;
     }
     if (count) (*count)++;
     return YES;
@@ -233,11 +270,18 @@ static NSString *adx_group_from_profile(void) {
     [self tick:0.03 stage:@"拷贝应用包" detail:appName];
     NSUInteger copied = 0;
     NSString *copyErr = nil;
-    if (!adx_copy_tree(self.bundlePath, stagedApp, &copied, &copyErr)) {
+    NSMutableArray<NSString *> *skipped = [NSMutableArray array];
+    if (!adx_copy_tree(self.bundlePath, stagedApp, &copied, skipped, &copyErr)) {
         [self fail:[NSString stringWithFormat:@"拷贝应用包失败：%@", copyErr ?: @"未知错误"] work:work];
         return;
     }
-    [self emit:[NSString stringWithFormat:@"拷贝完成：%lu 个文件", (unsigned long)copied]];
+    [self emit:[NSString stringWithFormat:@"拷贝完成：%lu 个文件%@", (unsigned long)copied,
+                skipped.count ? [NSString stringWithFormat:@"（跳过 %lu 个受保护文件）",
+                                 (unsigned long)skipped.count] : @""]];
+    if (skipped.count) {
+        [self emit:[NSString stringWithFormat:@"跳过的文件（沙盒/POSIX 都拒绝，已用内核读兜底仍失败）：%@",
+                    [[skipped valueForKeyPath:@"lastPathComponent"] componentsJoinedByString:@", "]]];
+    }
     if (_cancelled) { [self fail:@"已取消" work:work]; return; }
 
     // ── 3. 清点加密的 Mach-O ────────────────────────────────────────────
