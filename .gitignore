@@ -1,0 +1,6 @@
+build/
+dist/
+art/
+art.zip
+x/
+*.ipa
