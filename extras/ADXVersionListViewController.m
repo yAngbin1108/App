@@ -177,6 +177,7 @@
             case 1: msg = @"内核读写未就绪"; break;
             case 2: msg = @"版本号无效"; break;
             case 3: msg = @"当前是 arm64 构建，需要 arm64e 版本"; break;
+            case 5: msg = @"注入路径暂不可用（RemoteCall/arm64e 待修复）"; break;
             case 20: msg = @"无法附着 SpringBoard"; break;
             case 21: msg = @"目标进程内分配内存失败"; break;
             case 22: msg = @"dlopen StoreKitUI 失败"; break;

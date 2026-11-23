@@ -54,7 +54,8 @@
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
     return @"需要先在「砸壳」页跑完漏洞利用（内核读写就绪）。"
-           @"阻止更新时要在 App Store 点一次任意 App 的「获取」，把 installd 唤醒。";
+           @"做法是在 .app 父目录建 placeholder 目录并设 0000，不注入任何进程，"
+           @"所以 arm64 版本也能用。";
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -110,8 +111,8 @@
                                     : [NSString stringWithFormat:@"已恢复「%@」的更新", app.name];
                         break;
                 case 1: msg = @"内核读写未就绪"; break;
-                case 2: msg = @"无法附着 installd。\n\n请去 App Store 点任意 App 的「获取」把它唤醒，再回来重试。"; break;
-                case 4: msg = @"这个包是 arm64 构建，RemoteCall 无法注入 arm64e 的 installd。\n\n请安装 arm64e 版本的 App 再试。"; break;
+                case 2: msg = @"父目录不可写（改名/建目录都被拒）。"; break;
+                case 4: msg = @"内核能力不足，无法临时调整父目录属主。"; break;
                 default: msg = @"部分失败，详见日志 (block) 开头的记录。"; break;
             }
             [strongSelf alertTitle:rc == 0 ? @"完成" : @"未完成" message:msg];

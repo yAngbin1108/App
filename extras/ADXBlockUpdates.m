@@ -1,15 +1,27 @@
 //
 //  ADXBlockUpdates.m
-//  App 扩展层 — 阻止 App Store 更新
+//  App 扩展层 — 阻止 App Store 更新（不需要注入任何进程）
 //
-//  移植自 AppDump 的 kexploit/kcblock.m（Cyanide20 的实现），调用换成
-//  本仓库已有的 RemoteCall 适配层。
+//  原理和 Cyanide / AppDump 一样：在 .app 的【父目录】下放一个名为
+//  com.apple.mobileinstallation.placeholder 的目录并 chmod 0000，安装服务看到它
+//  就认为该应用「正在安装中」，从而跳过更新。
+//
+//  但这里不走「注入 installd + 远程 mkdir」那条路：那条路要求 RemoteCall，
+//  而 RemoteCall 只能在 arm64e 构建里工作、且第三方实现在 arm64e 上会崩（真机已复现）。
+//  我们本来就持有内核读写，所以改成：
+//    1. 先按普通方式 mkdir（父目录若已经属于 mobile 就直接成功）；
+//    2. 不行就把父目录的属主临时改成自己（apfs_own 走内核，不受 POSIX DAC 限制），
+//       mkdir + chmod 0000，再改回原属主。
+//  这样 arm64 构建里也能用，且完全不碰别的进程。
 //
 #import "ADXBlockUpdates.h"
 #import "ADXInternal.h"
-#import "ADXRemoteCompat.h"
 #import "darksword.h"
-#import "pac.h"
+#import "apfs.h"
+#import "SKKernelLock.h"
+
+#import <sys/stat.h>
+#include <errno.h>
 #import <unistd.h>
 
 NSString *const ADXPlaceholderName = @"com.apple.mobileinstallation.placeholder";
@@ -24,85 +36,101 @@ NSString *ADXPlaceholderPathForBundlePath(NSString *bundlePath) {
 BOOL ADXIsUpdateBlocked(NSString *bundlePath) {
     NSString *path = ADXPlaceholderPathForBundlePath(bundlePath);
     if (!path) return NO;
-    BOOL isDir = NO;
-    if ([[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDir]) return YES;
-    return NO;
+    return [[NSFileManager defaultManager] fileExistsAtPath:path];
 }
 
-/// 目标进程里分配字符串
-static uint64_t adx_alloc_str(const char *str) {
-    if (!str) return 0;
-    uint64_t len = strlen(str) + 1;
-    uint64_t buf = adx_remote_call(1000, "malloc", len, 0, 0, 0, 0, 0, 0, 0);
-    if (buf) adx_remote_write(buf, str, len);
-    return buf;
+#pragma mark - 属主
+
+static BOOL adx_chown(NSString *path, uid_t uid, gid_t gid) {
+    if (chown(path.fileSystemRepresentation, uid, gid) == 0) return YES;
+    if (!ds_is_ready()) return NO;
+    // 改不属于自己的文件只能走内核；apfs_own 要求调用方已持有内核锁。
+    [SKKernelLock() lock];
+    int rc = apfs_own(path.fileSystemRepresentation, uid, gid);
+    [SKKernelLock() unlock];
+    return rc == 0;
 }
+
+static BOOL adx_chmod(NSString *path, mode_t mode) {
+    if (chmod(path.fileSystemRepresentation, mode) == 0) return YES;
+    if (!ds_is_ready()) return NO;
+    [SKKernelLock() lock];
+    int rc = apfs_mod(path.fileSystemRepresentation, mode);
+    [SKKernelLock() unlock];
+    return rc == 0;
+}
+
+#pragma mark - 执行
 
 int ADXBlockApply(NSArray<NSString *> *paths, BOOL block,
                   void (^progress)(NSInteger, NSInteger)) {
     if (!paths.count) return 0;
     if (!ds_is_ready()) {
-        ADXLogf(@"(block) 内核原语未就绪");
+        ADXLogf(@"(block) 内核读写未就绪");
         return 1;
     }
-    // arm64 构建的进程生成不了 pacia，RemoteCall 无法往 arm64e 的 installd 写 PC/LR。
-    // 提前判定，别让它空转两分钟才报一句「去 App Store 点获取」。
-    if (!pacsignworks()) {
-        ADXLogf(@"(block) 当前是 arm64 构建：RemoteCall 不能给 arm64e 目标（installd）签名指针，"
-                 "注入不可用。请安装 arm64e 版本后再试。");
-        return 4;
-    }
 
-    ADXLogf(@"(block) 等待 installd 唤醒（卡住请去 App Store 点任意 App 的「获取」）…");
-    int retry = 0;
-    while (adx_init_remote_call("installd", false) != 0) {
-        NSString *why = adx_last_attach_error();
-        if (why.length && [why rangeOfString:@"arm64e"].location != NSNotFound) {
-            ADXLogf(@"(block) 附着被拒：%@", why);
-            return 4;
-        }
-        sleep(2);
-        retry++;
-        if (retry % 5 == 0) {
-            ADXLogf(@"(block) [WAIT] 仍在等待 installd…请去 App Store 点一次「获取」");
-        }
-        if (retry > 60) {
-            ADXLogf(@"(block) [FAIL] 等待 installd 超时");
-            return 2;
-        }
-    }
-    ADXLogf(@"(block) installd 已附着");
-
+    NSFileManager *fm = NSFileManager.defaultManager;
+    uid_t me = geteuid();
+    gid_t mygid = getegid();
     NSInteger total = (NSInteger)paths.count;
     NSInteger done = 0;
     int failed = 0;
 
-    for (NSString *p in paths) {
-        uint64_t pPtr = adx_alloc_str(p.UTF8String);
-        if (!pPtr) {
-            failed++; done++;
-            if (progress) progress(done, total);
-            continue;
-        }
+    for (NSString *path in paths) {
+        NSString *parent = path.stringByDeletingLastPathComponent;
+        struct stat pst;
+        BOOL havePst = (stat(parent.fileSystemRepresentation, &pst) == 0);
+        uid_t ownerUID = havePst ? pst.st_uid : 0;
+        gid_t ownerGID = havePst ? pst.st_gid : 0;
+        BOOL chowned = NO;
+
         if (block) {
-            uint64_t r = adx_remote_call(1000, "mkdir", pPtr, 0755, 0, 0, 0, 0, 0, 0);
-            adx_remote_call(1000, "chmod", pPtr, 0000, 0, 0, 0, 0, 0, 0);
-            if (r != 0) ADXLogf(@"(block) mkdir 返回 %llu（可能已存在）：%@",
-                                (unsigned long long)r, p.lastPathComponent);
+            if ([fm fileExistsAtPath:path]) {
+                ADXLogf(@"(block) 已存在，跳过：%@", path.lastPathComponent);
+            } else {
+                BOOL ok = (mkdir(path.fileSystemRepresentation, 0755) == 0);
+                if (!ok) {
+                    // 父目录是 root 的 → 临时改成自己再建
+                    chowned = adx_chown(parent, me, mygid);
+                    if (chowned) ok = (mkdir(path.fileSystemRepresentation, 0755) == 0);
+                    if (chowned) adx_chown(parent, ownerUID, ownerGID);
+                }
+                if (!ok) {
+                    ADXLogf(@"(block) 建目录失败：%@（errno=%d）", path, errno);
+                    failed++;
+                } else {
+                    if (!adx_chmod(path, 0000)) {
+                        ADXLogf(@"(block) chmod 0000 失败：%@（errno=%d）", path, errno);
+                        failed++;
+                    } else {
+                        ADXLogf(@"(block) 已阻止更新：%@", path);
+                    }
+                }
+            }
         } else {
-            adx_remote_call(1000, "chmod", pPtr, 0755, 0, 0, 0, 0, 0, 0);
-            uint64_t r = adx_remote_call(1000, "rmdir", pPtr, 0, 0, 0, 0, 0, 0, 0);
-            if (r != 0) {
-                ADXLogf(@"(block) rmdir 返回 %llu：%@", (unsigned long long)r, p.lastPathComponent);
-                failed++;
+            if (![fm fileExistsAtPath:path]) {
+                ADXLogf(@"(block) 本来就没阻止：%@", path);
+            } else {
+                if (chmod(path.fileSystemRepresentation, 0755) != 0) {
+                    // 目录是 0000 且属主不是自己 → 先借父目录
+                    chowned = adx_chown(parent, me, mygid);
+                    if (chowned) adx_chmod(path, 0755);
+                }
+                int rc = rmdir(path.fileSystemRepresentation);
+                if (chowned) adx_chown(parent, ownerUID, ownerGID);
+                if (rc != 0) {
+                    ADXLogf(@"(block) rmdir 失败：%@（errno=%d）", path, errno);
+                    failed++;
+                } else {
+                    ADXLogf(@"(block) 已恢复更新：%@", path);
+                }
             }
         }
-        adx_remote_call(1000, "free", pPtr, 0, 0, 0, 0, 0, 0, 0);
         done++;
         if (progress) progress(done, total);
     }
 
-    adx_destroy_remote_call();
     ADXLogf(@"(block) 完成：%ld 项，失败 %d", (long)total, failed);
     return failed ? 3 : 0;
 }

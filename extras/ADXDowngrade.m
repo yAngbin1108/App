@@ -40,8 +40,10 @@ BOOL ADXDowngradeReady(void) {
 NSString *ADXDowngradeBlockedReason(void) {
     if (!ds_is_ready()) return @"内核读写未就绪：先去「砸壳」页跑完漏洞利用。";
     if (!pacsignworks())
-        return @"当前是 arm64 构建，无法向 arm64e 的 SpringBoard 注入带 PAC 的指针。请安装 arm64e 版本。";
-    return @"";
+        return @"当前是 arm64 构建，无法向 arm64e 的 SpringBoard 注入带 PAC 的指针。";
+    // RemoteCall 的 arm64e 初始化在真机上会 SIGBUS（线程 TRO 扫描失败），
+    // 修好之前不发放，避免点一次就闪退。
+    return @"降级暂不可用：第三方 RemoteCall 在 arm64e 上初始化会崩溃（真机已复现），待修复后再开放。";
 }
 
 #pragma mark - 目标进程内的小工具
@@ -202,6 +204,9 @@ int ADXDowngradeRun(long long trackId, NSString *versionId, NSString *lookupJSON
         klog(@"当前是 arm64 构建，无法注入 arm64e 的 SpringBoard（需要 pacia）");
         return 3;
     }
+    // 见 ADXDowngradeBlockedReason：arm64e 上 RemoteCall 初始化会 SIGBUS，先不放行。
+    klog(@"注入路径暂不可用（RemoteCall/arm64e 待修复）");
+    return 5;
     klog(@"[注入 SpringBoard] track=%lld version=%lld", trackId, vid);
 
     // RemoteCall 会话是 __thread 的，整段必须在同一线程串行执行
