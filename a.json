@@ -1,0 +1,25 @@
+{
+  "total_count": 1,
+  "artifacts": [
+    {
+      "id": 14796542412,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc5NjU0MjQxMg==",
+      "name": "App-ipa",
+      "size_in_bytes": 1956673,
+      "url": "https://api.github.com/repos/yAngbin1108/App/actions/artifacts/14796542412",
+      "archive_download_url": "https://api.github.com/repos/yAngbin1108/App/actions/artifacts/14796542412/zip",
+      "expired": false,
+      "digest": "sha256:0424d7a8961eb326e18b835ab90b5ea2308b3b29249cea28e6dfd8b1d7e7ec8d",
+      "created_at": "2026-11-23T07:02:50Z",
+      "updated_at": "2026-11-23T07:02:50Z",
+      "expires_at": "2027-02-21T07:02:29Z",
+      "workflow_run": {
+        "id": 45128252622,
+        "repository_id": 1467647256,
+        "head_repository_id": 1467647256,
+        "head_branch": "main",
+        "head_sha": "a31a7af2c55282b550fa70bcfa3298f44bb6b3b5"
+      }
+    }
+  ]
+}
