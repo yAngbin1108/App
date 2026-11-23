@@ -12,6 +12,7 @@
 #import "ADXDowngradeViewController.h"
 #import "ADXIPAViewController.h"
 #import "ADXInternal.h"
+#import "ADXRCProbe.h"
 
 @implementation ADXHomeViewController
 
@@ -21,19 +22,23 @@
     self.tableView.backgroundColor = UIColor.systemGroupedBackgroundColor;
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 4; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 5; }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
     switch (s) {
         case 0: return @"砸壳（FairPlay · 无需内核）";
         case 1: return @"应用管理与产物";
         case 2: return @"设置";
+        case 3: return @"诊断（注入能力单独调试中）";
         default: return @"说明";
     }
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    if (s != 3) return nil;
+    if (s == 3) return @"本版默认停用跨进程注入：砸壳会自动回落到前台启动（会切到目标 App 再切回来）；"
+                        @"降级 / 屏蔽更新会提示不可用。点「注入自检」可以单独验证注入通道，"
+                        @"出问题只会记录日志并停住那条线程，不会闪退。";
+    if (s != 4) return nil;
     return @"FairPlay 砸壳走 mremap_encrypted()，由 fairplayd 解密后回读，"
            @"不需要内核漏洞；已安装应用的 SC_Info 里自带授权，所以能直接出包。"
            @"屏蔽更新需要内核读写就绪（先在「砸壳」页初始化）。";
@@ -41,7 +46,8 @@
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
     if (s == 1) return 3;
-    if (s == 3) return 4;
+    if (s == 3) return 1;
+    if (s == 4) return 4;
     return 1;
 }
 
@@ -90,6 +96,12 @@
         return cell;
     }
 
+    if (ip.section == 3) {
+        cell.textLabel.text = @"注入自检（RemoteCall）";
+        cell.detailTextLabel.text = @"只跑一次附着 SpringBoard + 远程 getpid，出问题不闪退";
+        return cell;
+    }
+
     cell.textLabel.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
     cell.textLabel.numberOfLines = 0;
     cell.detailTextLabel.text = nil;
@@ -104,6 +116,25 @@
     return cell;
 }
 
+- (void)runInjectionProbe {
+    UIAlertController *wait = [UIAlertController alertControllerWithTitle:@"注入自检"
+                                                                 message:@"正在附着 SpringBoard…（最多十几秒）"
+                                                          preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:wait animated:YES completion:nil];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSString *rep = adx_rc_probe_run();
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [wait dismissViewControllerAnimated:YES completion:^{
+                UIAlertController *a = [UIAlertController alertControllerWithTitle:@"注入自检结果"
+                                                                           message:rep
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+                [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+                [self presentViewController:a animated:YES completion:nil];
+            }];
+        });
+    });
+}
+
 - (void)relaxChanged:(UISwitch *)sw {
     [NSUserDefaults.standardUserDefaults setBool:sw.on forKey:@"adx.relax"];
 }
@@ -112,6 +143,8 @@
     [tv deselectRowAtIndexPath:ip animated:YES];
     if (ip.section == 0) {
         [self.navigationController pushViewController:[ADXAppListViewController new] animated:YES];
+    } else if (ip.section == 3) {
+        [self runInjectionProbe];
     } else if (ip.section == 1) {
         UIViewController *vc = nil;
         if (ip.row == 0) vc = [ADXBlockViewController new];
