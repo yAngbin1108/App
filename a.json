@@ -2,23 +2,23 @@
   "total_count": 1,
   "artifacts": [
     {
-      "id": 14797634375,
-      "node_id": "MDg6QXJ0aWZhY3QxNDc5NzYzNDM3NQ==",
+      "id": 14798133616,
+      "node_id": "MDg6QXJ0aWZhY3QxNDc5ODEzMzYxNg==",
       "name": "App-ipa",
-      "size_in_bytes": 1958162,
-      "url": "https://api.github.com/repos/yAngbin1108/App/actions/artifacts/14797634375",
-      "archive_download_url": "https://api.github.com/repos/yAngbin1108/App/actions/artifacts/14797634375/zip",
+      "size_in_bytes": 1958339,
+      "url": "https://api.github.com/repos/yAngbin1108/App/actions/artifacts/14798133616",
+      "archive_download_url": "https://api.github.com/repos/yAngbin1108/App/actions/artifacts/14798133616/zip",
       "expired": false,
-      "digest": "sha256:755ceaef1c8dc6ab02e907b6ab1e7cd7455e1cc6ab7d578c7ee3e9873fc64273",
-      "created_at": "2026-11-23T07:31:20Z",
-      "updated_at": "2026-11-23T07:31:20Z",
-      "expires_at": "2027-02-21T07:31:00Z",
+      "digest": "sha256:278d50da71c1cb4e74f0938a3f10bf14f633721197070281ed23cb50aeb41e5a",
+      "created_at": "2026-11-23T07:39:35Z",
+      "updated_at": "2026-11-23T07:39:35Z",
+      "expires_at": "2027-02-21T07:39:15Z",
       "workflow_run": {
-        "id": 45131667114,
+        "id": 45132668607,
         "repository_id": 1467647256,
         "head_repository_id": 1467647256,
         "head_branch": "main",
-        "head_sha": "f7b35e5c6d3180e4f76549326a32d9bc8375f45a"
+        "head_sha": "9a331ca8a50b87330a75b02fd7645b9c694e2fb6"
       }
     }
   ]
