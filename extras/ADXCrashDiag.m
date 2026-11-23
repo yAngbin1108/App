@@ -27,22 +27,15 @@ static int adx_sig_index(int sig) {
 }
 
 static void adx_crash_handler(int sig, siginfo_t *info, void *ctx) {
-    uintptr_t pc = 0, lr = 0, sp = 0;
-#if defined(__arm64__)
-    if (ctx) {
-        ucontext_t *uc = (ucontext_t *)ctx;
-        pc = (uintptr_t)uc->uc_mcontext->__ss.__pc;
-        lr = (uintptr_t)uc->uc_mcontext->__ss.__lr;
-        sp = (uintptr_t)uc->uc_mcontext->__ss.__sp;
-    }
-#endif
-    char buf[400];
+    (void)ctx;
+    // 新版 SDK 的 mcontext 把 pc/lr/sp 做成了不透明字段，这里不直接读寄存器，
+    // 靠 si_addr + backtrace（信号栈上的帧链能把被打断的调用栈带出来）。
+    char buf[300];
     int n = snprintf(buf, sizeof buf,
-                     "\n[adx-crash] signal %d (%s) code=%d addr=%p pc=0x%lx lr=0x%lx sp=0x%lx\n",
+                     "\n[adx-crash] signal %d (%s) code=%d addr=%p\n",
                      sig, strsignal(sig),
                      info ? info->si_code : 0,
-                     info ? info->si_addr : NULL,
-                     (unsigned long)pc, (unsigned long)lr, (unsigned long)sp);
+                     info ? info->si_addr : NULL);
     if (n > 0) write(STDERR_FILENO, buf, (size_t)n);
 
     void *frames[64];
