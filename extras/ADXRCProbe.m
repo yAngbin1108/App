@@ -7,6 +7,9 @@
 #import "RemoteCall.h"
 #import <unistd.h>
 
+// 强制走 iOS16+（exc_actions）路径 —— 旧路径在 17.5.1 上已被证伪
+extern void adx_rc_force_ios16(int on);
+
 // 注入窗口保护（ADXCrashDiag.m 提供）
 extern void adx_inject_guard_begin(void);
 extern void adx_inject_guard_end(void);
@@ -22,6 +25,7 @@ NSString *adx_rc_probe_run(void) {
     [rep appendString:@"== RemoteCall 注入自检 ==\n"];
 
     adx_rc_set_allowed(YES);
+    adx_rc_force_ios16(1);          // 走 exc_actions 路径，不再扫栈换 TRO
     adx_inject_guard_begin();
     ADXLogf(@"(probe) 开始注入自检（目标 SpringBoard）");
 
@@ -51,6 +55,7 @@ NSString *adx_rc_probe_run(void) {
     }
 
     adx_inject_guard_end();
+    adx_rc_force_ios16(0);
     adx_rc_set_allowed(NO);
 
     [rep appendString:@"== 自检结束（已重新停用注入） ==\n"];

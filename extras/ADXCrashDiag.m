@@ -22,8 +22,8 @@
 #import <stdint.h>
 #import <pthread.h>
 
-static int g_sigs[4] = { SIGBUS, SIGSEGV, SIGILL, SIGABRT };
-static struct sigaction g_prev[4];
+static int g_sigs[5] = { SIGBUS, SIGSEGV, SIGILL, SIGABRT, SIGTRAP };
+static struct sigaction g_prev[5];
 static char g_altstack[SIGSTKSZ * 4];
 static BOOL g_installed = NO;
 
@@ -33,7 +33,7 @@ static volatile int g_adx_inject_depth = 0;
 static volatile int g_adx_parked = 0;
 
 static int adx_sig_index(int sig) {
-    for (int i = 0; i < 4; i++) if (g_sigs[i] == sig) return i;
+    for (int i = 0; i < 5; i++) if (g_sigs[i] == sig) return i;
     return -1;
 }
 
@@ -106,7 +106,9 @@ static void adx_crash_handler(int sig, siginfo_t *info, void *ctx) {
     if (count > 0) backtrace_symbols_fd(frames, count, STDERR_FILENO);
 
     // 注入窗口里的崩溃：把这条线程停在死循环里，进程继续。
-    if (adx_injecting() && (sig == SIGBUS || sig == SIGSEGV) && adx_park_from_context(ctx)) {
+    if (adx_injecting() &&
+        (sig == SIGBUS || sig == SIGSEGV || sig == SIGILL || sig == SIGTRAP) &&
+        adx_park_from_context(ctx)) {
         g_adx_parked++;
         char b2[160];
         int m = snprintf(b2, sizeof b2,
@@ -142,7 +144,7 @@ static void adx_crash_install(void) {
     ss.ss_size = sizeof g_altstack;
     sigaltstack(&ss, NULL);
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         struct sigaction prev;
         memset(&prev, 0, sizeof prev);
         if (sigaction(g_sigs[i], NULL, &prev) != 0) continue;
